@@ -5,6 +5,18 @@ const crypto = require('crypto');
 
 const app = express();
 
+//logging requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (Object.keys(req.body).length) {
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
+  if (Object.keys(req.query).length) {
+    console.log('Query Params:', JSON.stringify(req.query, null, 2));
+  }
+  next();
+});
+
 // In-memory storage for clients, tokens, and authorization codes
 const clients = [
   {
