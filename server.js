@@ -126,6 +126,32 @@ app.get('/oauth2/v2/tokeninfo', (req, res) => {
   });
 });
 
+// redirecting sync requests to fallback route
+app.get('/signin/chrome/sync/*', (req, res) => {
+  // extract relative path after /signin/chrome/sync/
+  const relativePath = req.path.replace('/signin/chrome/sync/', '');
+  
+  if (relativePath.includes('..')) {
+    return res.status(400).send('Invalid path');
+  }
+  
+  // construct full file path
+  const filePath = path.join(__dirname, 'chrome-sync', relativePath);
+  
+  // send the file if it exists, or handle the error if it doesn't
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      // if file doesn't exist or there's another error, send a 404
+      res.status(404).send('File not found');
+    }
+  });
+});
+
+// keep original route as a fallback for the root path
+app.get('/signin/chrome/sync', (req, res) => {
+  res.json({ message: 'Hello from the fallback route' });
+});
+
 // issue token endpoint
 app.post('/v1/issuetoken', async (req, res) => {
   try {
