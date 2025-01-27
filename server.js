@@ -2,22 +2,28 @@ const express = require('express');
 const oauthServer = require('oauth2-server');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
-
 const app = express();
 
-//logging requests
+// adding body parser middleware
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+// logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  if (Object.keys(req.body).length) {
+  
+  if (req.body && Object.keys(req.body).length > 0) {
     console.log('Body:', JSON.stringify(req.body, null, 2));
   }
-  if (Object.keys(req.query).length) {
+  
+  if (req.query && Object.keys(req.query).length > 0) {
     console.log('Query Params:', JSON.stringify(req.query, null, 2));
   }
+  
   next();
 });
 
-// In-memory storage for clients, tokens, and authorization codes
+// In memory storage
 const clients = [
   {
     clientId: 'my-client-id',
@@ -26,55 +32,169 @@ const clients = [
     grants: ['authorization_code', 'password', 'refresh_token']
   }
 ];
-
 const tokens = {};
 const authorizationCodes = {};
 
+// OAuth server configuration
 const oauth = new oauthServer({
   model: require('./model'),
   grants: ['authorization_code', 'password', 'refresh_token'],
   debug: true
 });
 
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-
-app.get('/authorize', (req, res) => {
-  const { client_id, redirect_uri, response_type } = req.query;
-
-  const client = clients.find(c => c.clientId === client_id);
-  if (!client || !client.redirectUris.includes(redirect_uri)) {
-    return res.status(400).json({ error: 'Invalid client or redirect URI' });
-  }
-
-  if (response_type !== 'code') {
-    return res.status(400).json({ error: 'Unsupported response type' });
-  }
-
-  const authorizationCode = crypto.randomBytes(16).toString('hex');
-
-  authorizationCodes[authorizationCode] = {
-    code: authorizationCode,
-    expiresAt: new Date(Date.now() + 3600000), // 1 hour expiry
-    client,
-    user: { id: 1 }
-  };
-
-  const redirectUrl = `${redirect_uri}?code=${authorizationCode}`;
-  res.redirect(redirectUrl);
+app.get('/test', (req, res) => {
+  res.json({ message: 'OAuth server is running' });
 });
 
-app.post('/token', (req, res) => {
-  const request = new oauthServer.Request(req); 
-  const response = new oauthServer.Response(res);  
+// auth endpoint
+app.get('/o/oauth2/v2/auth', (req, res) => {
+  const { client_id, redirect_uri, response_type, scope, state } = req.query;
+  
+  const client = clients.find(c => c.clientId === client_id);
+  if (!client || !client.redirectUris.includes(redirect_uri)) {
+    return res.status(400).json({ error: 'invalid_client' });
+  }
+  
+  if (response_type !== 'code') {
+    return res.status(400).json({ error: 'unsupported_response_type' });
+  }
+  
+  const authorizationCode = crypto.randomBytes(16).toString('hex');
+  authorizationCodes[authorizationCode] = {
+    code: authorizationCode,
+    // 10 minute expiry
+    expiresAt: new Date(Date.now() + 600000),
+    client,
+    scope,
+    state,
+    // nn practice this would be the authenticated user
+    user: { id: 1 }
+  };
+  
+  const redirectUrl = new URL(redirect_uri);
+  redirectUrl.searchParams.set('code', authorizationCode);
+  if (state) {
+    redirectUrl.searchParams.set('state', state);
+  }
+  
+  res.redirect(redirectUrl.toString());
+});
 
-  oauth.token(request, response)
-    .then((token) => {
-      res.json(token);
-    })
-    .catch((err) => {
-      res.status(err.code || 500).json(err);
+// token endpoint
+app.post('/oauth2/v4/token', async (req, res) => {
+  try {
+    const request = new oauthServer.Request(req);
+    const response = new oauthServer.Response(res);
+    
+    const token = await oauth.token(request, response);
+    
+    tokens[token.accessToken] = {
+      ...token,
+      expiresAt: new Date(Date.now() + token.accessTokenExpiresAt)
+    };
+    
+    res.json({
+      access_token: token.accessToken,
+      token_type: 'Bearer',
+      expires_in: Math.floor((token.accessTokenExpiresAt - Date.now()) / 1000),
+      refresh_token: token.refreshToken,
+      scope: token.scope
     });
+  } catch (err) {
+    res.status(err.code || 500).json({
+      error: err.name,
+      error_description: err.message
+    });
+  }
+});
+
+// token info endpoint
+app.get('/oauth2/v2/tokeninfo', (req, res) => {
+  const accessToken = req.query.access_token;
+  const token = tokens[accessToken];
+  
+  if (!token || token.expiresAt < new Date()) {
+    return res.status(400).json({ error: 'invalid_token' });
+  }
+  
+  res.json({
+    azp: token.client.clientId,
+    aud: token.client.clientId,
+    scope: token.scope,
+    exp: Math.floor(token.expiresAt.getTime() / 1000),
+    expires_in: Math.floor((token.expiresAt - new Date()) / 1000)
+  });
+});
+
+// issue token endpoint
+app.post('/v1/issuetoken', async (req, res) => {
+  try {
+    const { client_id, client_secret, scope } = req.body;
+    
+    const client = clients.find(
+      c => c.clientId === client_id && c.clientSecret === client_secret
+    );
+    
+    if (!client) {
+      return res.status(401).json({ error: 'invalid_client' });
+    }
+    
+    const accessToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+    
+    tokens[accessToken] = {
+      accessToken,
+      client,
+      scope,
+      expiresAt
+    };
+    
+    res.json({
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// revoke token endpoint
+app.post('/o/oauth2/revoke', (req, res) => {
+  const { token } = req.body;
+  
+  if (tokens[token]) {
+    delete tokens[token];
+    res.status(200).end();
+  } else {
+    res.status(400).json({ error: 'invalid_token' });
+  }
+});
+
+// user info endpoint
+app.get('/oauth2/v1/userinfo', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+  
+  const accessToken = authHeader.split(' ')[1];
+  const token = tokens[accessToken];
+  
+  if (!token || token.expiresAt < new Date()) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+  
+  res.json({
+    id: '12345',
+    email: 'user@example.com',
+    verified_email: true,
+    name: 'Test User',
+    given_name: 'Test',
+    family_name: 'User',
+    picture: 'https://example.com/photo.jpg'
+  });
 });
 
 const PORT = 3000;
