@@ -4,6 +4,8 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const app = express();
 
+const URI_SERVER = "http://localhost:3000" | "https://d737-2409-40e4-104c-4945-3dc3-85c9-d095-83da.ngrok-free.app";
+
 // adding body parser middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -47,7 +49,7 @@ app.get('/test', (req, res) => {
 });
 
 // auth endpoint
-app.get('/o/oauth2/v2/auth', (req, res) => {
+app.get('/signin/chrome/0/o/oauth2/v2/auth', (req, res) => {
   const { client_id, redirect_uri, response_type, scope, state } = req.query;
   
   const client = clients.find(c => c.clientId === client_id);
@@ -67,7 +69,7 @@ app.get('/o/oauth2/v2/auth', (req, res) => {
     client,
     scope,
     state,
-    // nn practice this would be the authenticated user
+    // in practice this would be the authenticated user
     user: { id: 1 }
   };
   
@@ -126,30 +128,30 @@ app.get('/oauth2/v2/tokeninfo', (req, res) => {
   });
 });
 
-// redirecting sync requests to fallback route
-app.get('/signin/chrome/sync/*', (req, res) => {
-  // extract relative path after /signin/chrome/sync/
-  const relativePath = req.path.replace('/signin/chrome/sync/', '');
-  
-  if (relativePath.includes('..')) {
-    return res.status(400).send('Invalid path');
-  }
-  
-  // construct full file path
-  const filePath = path.join(__dirname, 'chrome-sync', relativePath);
-  
-  // send the file if it exists, or handle the error if it doesn't
-  res.sendFile(filePath, (err) => {
-    if (err) {
-      // if file doesn't exist or there's another error, send a 404
-      res.status(404).send('File not found');
-    }
-  });
-});
-
-// keep original route as a fallback for the root path
+// reverse engineered sync req and response
 app.get('/signin/chrome/sync', (req, res) => {
-  res.json({ message: 'Hello from the fallback route' });
+  res.set({
+    'Content-Type': 'text/html; charset=UTF-8',
+    'Set-Cookie': 'Host-GAPS=1:DcCQElkewD1WSNm4CWy2tidWlu35mA:DoYw4UXBxkS_i93a; Path=/; Expires=Sat, 30-Jan-2027 16:54:13 GMT; Secure; HttpOnly; Priority=HIGH',
+    'X-Frame-Options': 'DENY',
+    'Vary': 'Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site',
+    'Cache-Control': 'no-cache, no-store, max-age=0, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': 'Mon, 01 Jan 1990 00:00:00 GMT',
+    'Date': new Date().toUTCString(),
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+    'Content-Security-Policy': "script-src 'report-sample' 'nonce-x_iEXrXGvVgbrP9bVZBbfg' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self'; report-uri /cspreport",
+    'Cross-Origin-Opener-Policy-Report-Only': 'same-origin; report-to="coop_gse_qebhlk"',
+    'X-Content-Type-Options': 'nosniff',
+    'X-XSS-Protection': '1; mode=block',
+    'Content-Length': '463',
+    'Server': 'GSE',
+    'Alt-Svc': 'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'
+  });
+
+  const redirectUrl = `${URI_SERVER}/o/oauth2/v2/auth?client_id=my-client-id&redirect_uri=${URI_SERVER}/cb&response_type=code&scope=email&state=${req.query.state || ''}`;
+
+  res.redirect(redirectUrl);
 });
 
 // issue token endpoint
