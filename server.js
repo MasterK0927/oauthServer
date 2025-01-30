@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const app = express();
 
-const URI_SERVER = "http://localhost:3000" | "https://d737-2409-40e4-104c-4945-3dc3-85c9-d095-83da.ngrok-free.app";
+const URI_SERVER = "http://localhost:3000" | "https://675a-2409-40e4-104c-4945-3dc3-85c9-d095-83da.ngrok-free.app";
 
 // adding body parser middleware
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -30,10 +30,16 @@ const clients = [
   {
     clientId: 'my-client-id',
     clientSecret: 'my-client-secret',
-    redirectUris: ['http://localhost:3000/cb'],
+    redirectUris: [
+      'http://localhost:3000/cb',
+      'chrome://chrome-signin/',
+      'https://675a-2409-40e4-104c-4945-3dc3-85c9-d095-83da.ngrok-free.app/cb'
+    ],
     grants: ['authorization_code', 'password', 'refresh_token']
   }
 ];
+
+
 const tokens = {};
 const authorizationCodes = {};
 
@@ -48,39 +54,60 @@ app.get('/test', (req, res) => {
   res.json({ message: 'OAuth server is running' });
 });
 
+app.get('/signin/chrome/sync', (req, res) => {
+
+  // Forcing correct redirect URI
+  const redirectUrl = `${URI_SERVER}/o/oauth2/v2/auth?client_id=my-client-id&redirect_uri=https://675a-2409-40e4-104c-4945-3dc3-85c9-d095-83da.ngrok-free.app/cb&response_type=code&scope=email&state=${req.query.state || ''}`;
+
+  console.log("Redirecting Chrome OAuth to:", redirectUrl);
+  res.redirect(redirectUrl);
+});
+
+
 // auth endpoint
 app.get('/signin/chrome/0/o/oauth2/v2/auth', (req, res) => {
-  const { client_id, redirect_uri, response_type, scope, state } = req.query;
-  
+  let { client_id, redirect_uri, response_type, scope, state } = req.query;
+
   const client = clients.find(c => c.clientId === client_id);
-  if (!client || !client.redirectUris.includes(redirect_uri)) {
+  if (!client) {
     return res.status(400).json({ error: 'invalid_client' });
   }
-  
+
+  try {
+    new URL(redirect_uri);
+  } catch (error) {
+    console.warn("Invalid redirect_uri detected:", redirect_uri);
+    return res.status(400).json({ error: 'invalid_redirect_uri' });
+  }
+
+  if (!client.redirectUris.includes(redirect_uri)) {
+    return res.status(400).json({ error: 'redirect_uri_not_allowed' });
+  }
+
   if (response_type !== 'code') {
     return res.status(400).json({ error: 'unsupported_response_type' });
   }
-  
+
   const authorizationCode = crypto.randomBytes(16).toString('hex');
   authorizationCodes[authorizationCode] = {
     code: authorizationCode,
-    // 10 minute expiry
-    expiresAt: new Date(Date.now() + 600000),
+    expiresAt: new Date(Date.now() + 600000), // 10 minutes expiry
     client,
     scope,
     state,
-    // in practice this would be the authenticated user
-    user: { id: 1 }
+    user: { id: 1 }  // Dummy user
   };
-  
+
   const redirectUrl = new URL(redirect_uri);
   redirectUrl.searchParams.set('code', authorizationCode);
   if (state) {
     redirectUrl.searchParams.set('state', state);
   }
-  
+
+  console.log("Redirecting to:", redirectUrl.toString());
   res.redirect(redirectUrl.toString());
 });
+
 
 // token endpoint
 app.post('/oauth2/v4/token', async (req, res) => {
@@ -149,7 +176,7 @@ app.get('/signin/chrome/sync', (req, res) => {
     'Alt-Svc': 'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'
   });
 
-  const redirectUrl = `${URI_SERVER}/o/oauth2/v2/auth?client_id=my-client-id&redirect_uri=${URI_SERVER}/cb&response_type=code&scope=email&state=${req.query.state || ''}`;
+  const redirectUrl = `${URI_SERVER}/o/oauth2/v2/auth?client_id=my-client-id&redirect_uri=${encodeURIComponent(URI_SERVER + '/cb')}&response_type=code&scope=email&state=${req.query.state || ''}`;
 
   res.redirect(redirectUrl);
 });
