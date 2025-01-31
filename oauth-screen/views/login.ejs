@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sign in - Google Accounts</title>
+  <style>
+    :root { --blue: #1a73e8; --gray: #5f6368; }
+    body { font-family: 'Google Sans', Arial, sans-serif; max-width: 450px; margin: 2rem auto; padding: 0 20px; }
+    .header { text-align: center; margin-bottom: 2rem; }
+    .logo { height: 24px; margin-bottom: 1rem; }
+    .card { border: 1px solid #dadce0; border-radius: 8px; padding: 40px 40px 36px; }
+    h1 { font-size: 24px; font-weight: 400; margin-bottom: 2rem; }
+    .form-group { margin-bottom: 1.5rem; }
+    input { width: 100%; padding: 13px 15px; border: 1px solid #dadce0; border-radius: 4px; font-size: 16px; }
+    button { background: var(--blue); color: white; border: none; padding: 12px 24px; border-radius: 4px; font-weight: 500; cursor: pointer; }
+    .error { color: #d93025; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="https://www.ping-browser.com/_next/image?url=%2Fping-logo.png&w=48&q=75" alt="Ping" class="logo">
+  </div>
+  
+  <div class="card">
+    <% if (error) { %>
+      <div class="error"><%= error %></div>
+    <% } %>
+
+    <h1>Sign in</h1>
+    
+    <form method="POST" action="/login">
+      <input type="hidden" name="client_id" value="<%= client_id %>">
+      <input type="hidden" name="redirect_uri" value="<%= redirect_uri %>">
+      <input type="hidden" name="state" value="<%= state %>">
+      
+      <div class="form-group">
+        <input type="email" name="email" placeholder="Email or phone" required>
+      </div>
+      
+      <div class="form-group">
+        <input type="password" name="password" placeholder="Password" required>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <a href="#" style="color: var(--blue); text-decoration: none">Forgot password?</a>
+        <button type="submit">Next</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
